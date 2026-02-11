@@ -1,4 +1,3 @@
-
 export type AgentResponse = {
   answer: string;
   agent: string;
@@ -7,7 +6,7 @@ export type AgentResponse = {
 };
 
 export async function sendMessage(query: string): Promise<AgentResponse> {
-  const response = await fetch("https://agentflow-backend-cgqf.onrender.com/", {
+  const response = await fetch("https://agentflow-backend-cgqf.onrender.com/chat", {  // ← Changed here
     method: "POST",
     headers: {
       "Content-Type": "application/json",
