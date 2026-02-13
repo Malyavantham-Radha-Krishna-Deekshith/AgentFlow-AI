@@ -1,3 +1,9 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Menu, X, Sun, Moon } from "lucide-react";
+import { useTheme } from "next-themes";
+
 type Chat = {
   id: string;
   title: string;
@@ -20,71 +26,111 @@ export default function Sidebar({
   onDeleteChat,
   onClearAll,
 }: Props) {
-  return (
-    <div className="w-64 bg-gray-900 text-white p-4 flex flex-col">
-      {/* Header */}
-      <h1 className="text-xl font-semibold mb-4">AgentFlow AI</h1>
+  const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const { theme, setTheme } = useTheme();
 
-      {/* New Chat Button */}
+  // 🔒 Prevent SSR / hydration issues
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  return (
+    <>
+      {/* Mobile menu button */}
       <button
-        onClick={onNewChat}
-        className="bg-blue-600 hover:bg-blue-700 transition p-2 rounded-lg mb-2"
+        className="fixed top-4 left-4 z-50 lg:hidden bg-gray-800 text-white p-2 rounded"
+        onClick={() => setOpen(!open)}
+        aria-label="Toggle menu"
       >
-        + New Chat
+        {open ? <X /> : <Menu />}
       </button>
 
-      {/* Clear All Chats */}
-      {chats.length > 0 && (
-        <button
-          onClick={onClearAll}
-          className="text-sm text-red-400 hover:text-red-500 transition mb-4 self-start"
-        >
-          Clear all chats
-        </button>
+      {/* Overlay */}
+      {open && (
+        <div
+          className="fixed inset-0 bg-black/40 z-40 lg:hidden"
+          onClick={() => setOpen(false)}
+        />
       )}
 
-      {/* Chat List */}
-      <div className="flex-1 space-y-2 overflow-y-auto">
-        {chats.length === 0 && (
-          <p className="text-sm text-gray-400 mt-4">
-            No conversations yet
-          </p>
+      {/* Sidebar */}
+      <aside
+        className={`
+          fixed lg:static z-50 h-full w-64
+          bg-gray-900 text-white p-4
+          transform transition-transform duration-300
+          ${open ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
+        `}
+      >
+        {/* Header */}
+        <div className="flex justify-between items-center mb-4">
+          <h1 className="font-bold text-lg">AgentFlow AI</h1>
+
+          {/* Theme toggle (only after mount) */}
+          {mounted && (
+            <button
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="p-2 rounded hover:bg-gray-700"
+              aria-label="Toggle theme"
+            >
+              {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+          )}
+        </div>
+
+        {/* New chat */}
+        <button
+          onClick={() => {
+            onNewChat();
+            setOpen(false);
+          }}
+          className="w-full bg-blue-600 py-2 rounded mb-3"
+        >
+          + New Chat
+        </button>
+
+        {/* Clear chats */}
+        {chats.length > 0 && (
+          <button
+            onClick={onClearAll}
+            className="text-red-400 text-sm mb-4"
+          >
+            Clear all chats
+          </button>
         )}
 
-        {chats.map((chat) => {
-          const isActive = chat.id === activeId;
-
-          return (
+        {/* Chat list */}
+        <div className="space-y-2 overflow-y-auto">
+          {chats.map((chat) => (
             <div
               key={chat.id}
-              onClick={() => onSelectChat(chat.id)}
-              className={`flex items-center justify-between p-2 rounded cursor-pointer transition border-l-4 ${
-                isActive
-                  ? "bg-gray-700 border-blue-500"
-                  : "bg-gray-800 border-transparent hover:bg-gray-700"
+              className={`flex justify-between items-center p-2 rounded cursor-pointer ${
+                chat.id === activeId
+                  ? "bg-gray-700"
+                  : "hover:bg-gray-800"
               }`}
+              onClick={() => {
+                onSelectChat(chat.id);
+                setOpen(false);
+              }}
             >
-              {/* Chat title */}
-              <span className="text-sm truncate flex-1 select-none">
-                {chat.title}
-              </span>
+              <span className="truncate text-sm">{chat.title}</span>
 
-              {/* Delete chat */}
               <button
-                aria-label="Delete chat"
-                title="Delete chat"
                 onClick={(e) => {
-                  e.stopPropagation(); // prevent chat selection
+                  e.stopPropagation();
                   onDeleteChat(chat.id);
                 }}
-                className="text-red-400 hover:text-red-500 text-xs ml-2"
+                className="text-red-400"
+                aria-label="Delete chat"
               >
                 ✕
               </button>
             </div>
-          );
-        })}
-      </div>
-    </div>
+          ))}
+        </div>
+      </aside>
+    </>
   );
 }
