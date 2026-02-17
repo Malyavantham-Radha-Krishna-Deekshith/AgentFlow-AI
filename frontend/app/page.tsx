@@ -9,16 +9,18 @@ import { saveChats, loadChats } from "../lib/storage";
 import { typeText } from "../lib/typing";
 import { generateTitleFromText } from "../lib/title";
 
+type AgentMetadata = {
+  agent: string;
+  intent: string;
+  tools_used: string[];
+};
+
 type Message = {
   role: "user" | "ai";
   content: string;
   fullContent?: string;
   isExpanded?: boolean;
-  metadata?: {              
-    agent: string;
-    intent: string;
-    tools_used: string[];
-  };
+  metadata?: AgentMetadata; // ✅ STRICT
 };
 
 type Chat = {
@@ -32,75 +34,93 @@ export default function Home() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  /* Load chats */
+  /* -------------------------------
+     AUTO CREATE FIRST CHAT
+  -------------------------------- */
   useEffect(() => {
-    const { chats, activeId } = loadChats();
-    setChats(chats);
-    setActiveChatId(activeId);
+    const { chats: storedChats, activeId } = loadChats();
+
+    if (!storedChats || storedChats.length === 0) {
+      const id = crypto.randomUUID();
+      const firstChat: Chat = {
+        id,
+        title: "New Conversation",
+        messages: [],
+      };
+      setChats([firstChat]);
+      setActiveChatId(id);
+    } else {
+      setChats(storedChats);
+      setActiveChatId(activeId || storedChats[0].id);
+    }
   }, []);
 
-  /* Persist chats */
+  /* -------------------------------
+     Persist Chats
+  -------------------------------- */
   useEffect(() => {
-    saveChats(chats, activeChatId);
+    if (chats.length > 0) {
+      saveChats(chats, activeChatId);
+    }
   }, [chats, activeChatId]);
 
+  /* -------------------------------
+     Create Chat
+  -------------------------------- */
   const createChat = () => {
     const id = crypto.randomUUID();
-    setChats((prev) => [
-      ...prev,
-      { id, title: "New Conversation", messages: [] },
-    ]);
+    const newChat: Chat = {
+      id,
+      title: "New Conversation",
+      messages: [],
+    };
+
+    setChats((prev) => [...prev, newChat]);
     setActiveChatId(id);
   };
 
+  /* -------------------------------
+     Delete Chat
+  -------------------------------- */
   const deleteChat = (id: string) => {
     if (!confirm("Delete this chat?")) return;
-    setChats((prev) => prev.filter((c) => c.id !== id));
-    if (id === activeChatId) setActiveChatId(null);
+
+    const updated = chats.filter((c) => c.id !== id);
+    setChats(updated);
+
+    if (id === activeChatId) {
+      setActiveChatId(updated.length ? updated[0].id : null);
+    }
   };
 
+  /* -------------------------------
+     Clear All Chats
+  -------------------------------- */
   const clearAllChats = () => {
     if (!confirm("Clear all chats?")) return;
-    setChats([]);
-    setActiveChatId(null);
+
+    const id = crypto.randomUUID();
+    const freshChat: Chat = {
+      id,
+      title: "New Conversation",
+      messages: [],
+    };
+
+    setChats([freshChat]);
+    setActiveChatId(id);
   };
 
-  /* ---------------------------------
-     CLEAN TEXT - Remove all asterisks
-  ---------------------------------- */
-  const cleanText = (text: string): string => {
-    return text
-      .replace(/\*\*/g, '')  // Remove ** (bold markdown)
-      .replace(/\*/g, '');    // Remove single * (list markers, etc.)
-  };
-
-  /* ---------------------------------
-     TRUNCATE AT SENTENCE BOUNDARY
-  ---------------------------------- */
-  const getPreview = (text: string, sentenceLimit: number = 3) => {
-    const sentences = text.match(/[^.!?]+[.!?]+/g) || [];
-    
-    if (sentences.length <= sentenceLimit) {
-      return { preview: text, hasMore: false };
-    }
-    
-    const preview = sentences.slice(0, sentenceLimit).join(' ');
-    return { preview, hasMore: true };
-  };
-
-  /* ---------------------------------
-     TOGGLE EXPANSION
-  ---------------------------------- */
-  const toggleExpansion = (messageIndex: number) => {
+  /* -------------------------------
+     Toggle Expansion
+  -------------------------------- */
+  const toggleExpansion = (index: number) => {
     setChats((prev) =>
       prev.map((chat) =>
         chat.id === activeChatId
           ? {
               ...chat,
               messages: chat.messages.map((m, i) =>
-                i === messageIndex
-                  ? { ...m, isExpanded: !m.isExpanded }
-                  : m
+                i === index ? { ...m, isExpanded: !m.isExpanded } : m
               ),
             }
           : chat
@@ -108,9 +128,9 @@ export default function Home() {
     );
   };
 
-  /* ---------------------------------
-     SEND MESSAGE
-  ---------------------------------- */
+  /* -------------------------------
+     Send Message
+  -------------------------------- */
   const send = async (text: string) => {
     if (!text.trim() || !activeChatId) return;
 
@@ -119,32 +139,30 @@ export default function Home() {
 
     setLoading(true);
 
-    // 1️⃣ Add user message
-   useEffect(() => {
-  const { chats, activeId } = loadChats();
-
-  if (chats.length === 0) {
-    // Auto-create first chat for new users
-    const id = crypto.randomUUID();
-    setChats([{ id, title: "New Conversation", messages: [] }]);
-    setActiveChatId(id);
-  } else {
-    setChats(chats);
-    setActiveChatId(activeId || chats[0].id);
-  }
-}, []);
+    // Add user message
+    setChats((prev) =>
+      prev.map((chat) =>
+        chat.id === activeChatId
+          ? {
+              ...chat,
+              messages: [...chat.messages, { role: "user", content: text }],
+            }
+          : chat
+      )
+    );
 
     try {
-      // 2️⃣ Call LLM - ✨ NOW CAPTURES METADATA
       const response = await sendMessage(text);
-      
-      // 3️⃣ Clean the full response (remove all asterisks)
-      const cleanedFullResponse = cleanText(response.answer);
 
-      // 4️⃣ Get preview (2-3 sentences from cleaned text)
-      const { preview, hasMore } = getPreview(cleanedFullResponse, 3);
+      const metadata: AgentMetadata = {
+        agent: response.agent || "LLM",
+        intent: response.intent || "general",
+        tools_used: response.tools_used || [],
+      };
 
-      // 5️⃣ Insert empty AI message - ✨ WITH METADATA
+      const fullResponse = response.answer;
+
+      // Insert AI message
       setChats((prev) =>
         prev.map((chat) =>
           chat.id === activeChatId
@@ -155,13 +173,9 @@ export default function Home() {
                   {
                     role: "ai",
                     content: "",
-                    fullContent: cleanedFullResponse,  // Store cleaned full content
+                    fullContent: fullResponse,
                     isExpanded: false,
-                    metadata: {                        // ✨ ADDED METADATA CAPTURE
-                      agent: response.agent,
-                      intent: response.intent,
-                      tools_used: response.tools_used || [],
-                    },
+                    metadata,
                   },
                 ],
               }
@@ -169,8 +183,8 @@ export default function Home() {
         )
       );
 
-      // 6️⃣ Typing effect (ONLY PREVIEW - already cleaned)
-      await typeText(preview, (partial) => {
+      // Typing effect
+      await typeText(fullResponse, (partial) => {
         setChats((prev) =>
           prev.map((chat) =>
             chat.id === activeChatId
@@ -187,16 +201,9 @@ export default function Home() {
         );
       });
 
-      // 7️⃣ Generate chat title once
+      // Generate title
       if (isFirstMessage) {
-        let title = generateTitleFromText(text);
-        try {
-          const t = await sendMessage(
-            `Generate a short 3-5 word chat title for: "${text}"`
-          );
-          title = generateTitleFromText(t.answer);
-        } catch {}
-
+        const title = generateTitleFromText(text);
         setChats((prev) =>
           prev.map((chat) =>
             chat.id === activeChatId ? { ...chat, title } : chat
@@ -229,7 +236,7 @@ export default function Home() {
   const activeChat = chats.find((c) => c.id === activeChatId);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-900">
       <Sidebar
         chats={chats}
         activeId={activeChatId}
@@ -239,19 +246,19 @@ export default function Home() {
         onClearAll={clearAllChats}
       />
 
-      <div className="flex flex-col flex-1">
-        <ChatWindow 
-          messages={activeChat?.messages || []} 
+      <div className="flex flex-col flex-1 min-w-0">
+        <ChatWindow
+          messages={activeChat?.messages || []}
           onToggleExpansion={toggleExpansion}
         />
 
         {loading && (
-          <div className="px-6 py-2 text-sm text-gray-500">
+          <div className="px-6 py-2 text-sm text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700">
             🤖 Agent is thinking...
           </div>
         )}
 
-        {activeChat && <InputBox onSend={send} />}
+        <InputBox onSend={send} />
       </div>
     </div>
   );
