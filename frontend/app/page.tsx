@@ -120,16 +120,19 @@ export default function Home() {
     setLoading(true);
 
     // 1️⃣ Add user message
-    setChats((prev) =>
-      prev.map((chat) =>
-        chat.id === activeChatId
-          ? {
-              ...chat,
-              messages: [...chat.messages, { role: "user", content: text }],
-            }
-          : chat
-      )
-    );
+   useEffect(() => {
+  const { chats, activeId } = loadChats();
+
+  if (chats.length === 0) {
+    // Auto-create first chat for new users
+    const id = crypto.randomUUID();
+    setChats([{ id, title: "New Conversation", messages: [] }]);
+    setActiveChatId(id);
+  } else {
+    setChats(chats);
+    setActiveChatId(activeId || chats[0].id);
+  }
+}, []);
 
     try {
       // 2️⃣ Call LLM - ✨ NOW CAPTURES METADATA
